@@ -1,0 +1,118 @@
+#+title: Alerts Notification System API
+
+* Build
+This project requires a connection to a running PostgreSQL server in order to function. The project contains a docker compose file that will run an appropriate server by running =docker compose up=. After the database is up and running simply run the project or tests in an IDE such as Intellij. 
+
+* Usage
+The API endpoints can be tested with the provided tests in the =tests= folder. The database is deleted before each test but /not/ after, so the application can be tested with external applications like postman after a test, but running it again will delete the database. If you would like to test it with different information, simply copy a test and follow the pattern to input different data. Note that if you try to insert the same object into the database multiple times, Spring JPA will throw an error. A new class instance must be used for each insert. 
+
+* How does it work?
+The project has three main components, Spring web, Spring JPA and Map Struct. Spring web is responsible for creating the REST controllers for the API endpoints, Spring JPA handles management of DAO (Data Access Objects) and database access including creating tables, inserting entities and querying the database among others tasks. Map Struct's primary responsibility is to transform the data queried from the database into an appropriate response in the form of DTO (Data Transfer Objects).
+
+* Example Sequence
+This sequence diagram gives an indication of the standard route that an is followed when data is requested from the API. 
+
+[[file:images/spring_example.png]]
+
+* Endpoints
+** List people serviced by a fire station
+URI: =http://localhost:8080/firestation?stationNumber=<station_number>=
+Controller: =FireStationController=
+
+This URL should return a list of people serviced by the corresponding fire station. So if station number = 1,
+it should return the people serviced by station number 1. The list of people should include these specific
+pieces of information: first name, last name, address, and phone number. As well, it should provide a
+summary of the number of adults in the service area and the number of children (anyone aged 18 or
+younger).
+
+[[file:images/firestation.png]]
+
+** List of children and adults at an address
+URI: =http://localhost:8080/childAlert?address=<address>=
+Controller: =ChildAlertController=
+
+This URL should return a list of children (anyone under the age of 18) at that address. The list should
+include the first and last name of each child, the child’s age, and a list of other persons living at that
+address. If there are no children at the address, then this URL can return an empty string.
+
+** List of phone numbers serviced by a fire station
+URI: =http://localhost:8080/phoneAlert?firestation=<firestation_number>=
+Controller: =PhoneAlertController=
+
+[[file:images/phoneAlert.png]]
+
+This URL should return a list of phone numbers of each person within the fire station’s jurisdiction. We’ll
+use this to send emergency text messages to specific households.
+
+** List people serviced by a fire station and the station id
+URI: =http://localhost:8080/fire?address=<address>=
+Controller: =FireController=
+
+This URL should return the fire station number that services the provided address as well as a list of all of
+the people living at the address. This list should include each person’s name, phone number, age,
+medications with dosage, and allergies.
+
+** List of households serviced by a list of fire stations
+URI: =http://localhost:8080/flood/stations?stations=<a list of station_numbers>=
+Controller: =FloodController=
+
+[[file:images/flood.png]]
+
+This should return a list of all the households in each fire station’s jurisdiction. This list needs to group
+people by household address, including name, phone number, and age of each person, and any
+medications (with dosages) and allergies beside each person’s name.
+
+** Personal info of an individual by name
+URI: =http://localhost:8080/personInfo?firstName=<firstName>&lastName=<lastName>=
+Controller: =PersonInfoController=
+
+[[file:images/person_info.png]]
+
+This should return the person’s name, address, age, email, list of medications with dosages and allergies.
+If there is more than one person with the same name, this URL should return all of them.
+
+** List of all emails in a community
+URI: =http://localhost:8080/communityEmail?city=<city>=
+Controller: =CommunityEmailController=
+
+
+This will return the email addresses of all of the people in the city
+
+* SOLID
+** Single Responsibility
+Separating DTOs and DAOs is an excellent example of the single responsibility principle. With the DTO's the entities would need to contain all the logic for correctly mapping the response data, or that logic would need to be you controller. If the requirements for the data you need to send back to the client changes, all of that logic would need to change. Alternatively, if the logic is handled in a single use class, either that class alone needs to be altered, or a new one can be created to handle the changing requirements. 
+** Open/Closed
+Another advantage of using DTOs to map response data, is that they are easily extendable in conformance with the open/closed principle. Example, take this =MedicationDto=:
+
+#+begin_src java
+@Data
+public class MedicationDto {
+    private String name;
+    private String dosage;
+}
+#+end_src
+
+because it only contains the minimum logic needed to perform its function and does not contain any logic for mapping data, database queries etc., if you wanted to extend by this class by adding an extra field of data you could do so easily. A contrived example would be, say you wanted to create a =CriticalMedicationDto= that needed to have the date the medication was prescribed, you could easily extend =MedicationDto= like so:
+
+#+begin_src java
+@EqualsAndHashCode(callSuper = true)
+@Data
+public class CriticalMedicationDto extends MedicationDto {
+    private String prescribed = LocalDateTime.now().toString();
+}
+#+end_src
+
+This would produce an response with that data:
+
+[[file:images/critical_medication.png]]
+
+while simply using the =MedicationDto= would produce the following result:
+
+[[file:images/medication.png]]
+
+** Liskov Substitution
+By using sparse classes like this it is much easier to conform to the Liskov substitution principle because the logic for mapping the class is not contained within it. It just handles the logic needed to act as a data structure, so extending the class will provide suitable and predicable behaviour between sub/super classes.
+** Interface Segregation
+By creating different services for different controllers, the application conforms to interface segregation. The application would not conform to interface segregation if I created a large =Service= class that handled services needed by all controllers because then when a controller depended on this class it would expose all controller services which would be prone to errors.
+** Dependency Inversion
+The Spring JPA implementation of =@Entity= is an excellent example of dependency inversion. The entity is an abstraction that does not rely directly on the database implementation itself, instead it is an abstraction of an entity that can be used interchangeably with different persistent storage. For example, if you wanted to use an H2 database during development, and then later switch to a MySql database, the entity code should not need to change dependent on these different storage solutions.
